@@ -14,6 +14,7 @@
 - Computer: CPUのプレイヤー。機械学習かゲーム理論やら学んで対戦CPUを作れたらなという展望。
 
 ## クラス図
+```mermaid
 classDiagram
     Player <|.. AbstractPlayer
     AbstractPlayer <|-- People
@@ -130,7 +131,7 @@ classDiagram
         + selectHand() List < String >
         + selectMenu(flag : bpolean) int
     }
-
+```
 
 ## 実行
 適当にコンパイルして
