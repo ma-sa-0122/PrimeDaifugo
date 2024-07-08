@@ -1,4 +1,4 @@
-public class Checker {
+public class CheckerUtils {
     public static boolean isSameCardsNum(int cardsNum, int cardsNumPrev) {
         return cardsNum == cardsNumPrev;
     }

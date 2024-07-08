@@ -14,12 +14,12 @@ public class Main {
         String a = Menu(false);
         String b = "0";
         if (a.equals("0")) {
-            Daifugo.printHelp();
+            DaifugoUtils.printHelp();
             b = Menu(true);
         }
         if (a.equals("1") || b.equals("0")) {
-            playerList.add(new Player("player1"));
-            playerList.add(new Player("player2"));
+            playerList.add(new People("player1"));
+            playerList.add(new People("player2"));
             playersNum = 2;
             initCardnum = 7;
         } else if (a.equals("2") || b.equals("1")) {
@@ -27,7 +27,7 @@ public class Main {
             playersNum = scanner.nextInt();
 
             for (int i = 0; i < playersNum; i++) {
-                playerList.add(new Player("player" + (i + 1)));
+                playerList.add(new People("player" + (i + 1)));
             }
 
             System.out.print("最初に配る手札の枚数を入力> ");
@@ -37,11 +37,11 @@ public class Main {
         }
 
         // 素数大富豪オブジェクト
-        DaifugoMain daifugoMain = new DaifugoMain(playersNum, initCardnum);
+        Daifugo daifugo = new Daifugo(playersNum, initCardnum);
 
         // 各プレイヤーに手札を配る
         for (Player player : playerList) {
-            daifugoMain.initialize(player);
+            daifugo.initialize(player);
         }
         // 勝敗がつくまでターンを進める
         int playerSelect = 0;
@@ -49,7 +49,7 @@ public class Main {
         while (!winlose) {
             playerSelect = playerSelect % playersNum;
             Player player = playerList.get(playerSelect);
-            winlose = daifugoMain.turn(player);
+            winlose = daifugo.turn(player);
             playerSelect++;
         }
     }

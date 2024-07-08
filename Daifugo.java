@@ -1,123 +1,169 @@
-import java.util.Arrays;
-import java.util.InputMismatchException;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 
 public class Daifugo {
-    public static void print(Player player, int valuePrev, int cardsNum, boolean revolution) {
-        System.out.println();
-        System.out.println("---------------");
-        System.out.println("直前の数字: " + valuePrev + " (" + cardsNum + "枚)");
-        System.out.println("革命: " + revolution);
-        System.out.println("Player: " + player.getName());
-        System.out.println();
+    private int playersNum;                                 // プレイ人数
+    private int initCardnum;                                // 初期手札枚数
+    private int passCount;                                  // パス連続回数
+    private int valuePrev;                                  // 直前の数字
+    private int cardsNumPrev;                               // 直前の数字のカード枚数
+    private boolean revolution;                             // 革命
+    private CardStock cardStock = new CardStock();          // 山札
+    private List<Card> cardBoard = new ArrayList<Card>();   // 場
+    public Daifugo(int playersNum, int initCardnum) {
+        this.playersNum = playersNum;
+        this.initCardnum = initCardnum;
     }
-    public static int selectMenu(boolean flag) {
-        List<String> list;
-        if (flag) {
-            list = Arrays.asList("パス", "手札を場に出す");
-        } else {
-            list = Arrays.asList("パス", "山札から1枚引く", "手札を場に出す");
+
+    // 最初に実行。山札からプレイヤーの手札にinitCardnum枚引く。初期手札を作る。
+    public void initialize(Player player) {
+        for (int i = 0; i < this.initCardnum; i++) {
+            player.add(cardStock.remove(0));
+        }
+        player.sort();
+    }
+
+    // プレイヤーのターン。決着がつくとtrueが返る。
+    public boolean turn(Player player) {
+        // 山札が少なかったら場の先頭から持ってくる
+        if (cardStock.size() < 5) {
+            for (int i = 0; i < cardBoard.size() - 10; i++) {
+                cardStock.add(cardBoard.remove(0));
+            }
+            cardStock.shufle();
         }
 
-        while (true) {
-            for (int i = 0; i < list.size(); i++) {
-                System.out.println(i + ":" + list.get(i));
+        // 前の値と革命の有無を表示
+        DaifugoUtils.print(player, this.valuePrev, this.cardsNumPrev, this.revolution);
+
+        // 手札を一覧表示
+        DaifugoUtils.printHand(player);
+
+        // 行動を選択(a 0:パス, 1:1枚引く, 2:場に出す,  b 0:パス, 1:場に出す)
+        int a = DaifugoUtils.selectMenu(false);
+        int b = 2;
+        if (a == 1) {       // 行動選択:一枚引く
+            player.add(cardStock.remove(0));
+            DaifugoUtils.printHand(player);
+            b = DaifugoUtils.selectMenu(true);
+        }
+        if (a == 0 || b == 0) {     // 行動選択:パス
+            this.passCount++;
+            // 全員パスなら場を流す
+            if (this.passCount == playersNum - 1) {
+                this.flow();
             }
-            System.out.print("行動を選択> ");
-            Scanner scanner = new Scanner(System.in);
-            try {
-                return scanner.nextInt();
-            } catch (InputMismatchException e) {
-                System.err.println("0~" + (list.size() - 1) + "の範囲で入力してください");
+            return false;
+        }
+
+        // 行動選択:場に出す
+        passCount = 0;
+        int split = 0;
+        boolean isComposite = false;
+        List<String> selects = new ArrayList<String>();
+        List<Card> selectCards = new ArrayList<Card>();
+        do {    // 出すカードを選択。手札にないカードを選択し続ける限り選び直し
+            selectCards.clear();
+            selects.addAll(player.selectHand());
+            split = selects.size();
+            if (selects.contains("|")) {        // 合成数なら、値と素因数の分かれ目が何番目か記録し、isCompositeをtrueにする。
+                split = selects.indexOf("|");
+                selects.remove(split);
+                isComposite = true;
+            }
+            for (String str : selects) {
+                selectCards.add(DaifugoUtils.stringToCard(player, str));
+            }
+        } while (selectCards.contains(null));
+        // カードからvalueを作成。合成数出し用に split(出したい合成数と素因数の区切り場所), isComposite, composite(素因数の積) を用意
+        List<Card> cards = selectCards.subList(0,split);    // 出す数値を構成するカード
+        int cardsNum = cards.size();                        // 出す数値を構成するカードの枚数
+        int allSize = selectCards.size();                   // 出すカードの総数
+        int value = DaifugoUtils.makeValue(cards);          // 出す数値
+        int composite = 1;                                  // 合成数出しの素因数の積
+        for (int i = split; i < allSize; i++) {
+            Card card = selectCards.get(i);
+            String number = DaifugoUtils.getNumber(card);
+            composite = composite * Integer.parseInt(number);
+        }
+
+        // 素数・役判定
+        // 同じ枚数 and 直前より大きい値
+        if ((cardsNumPrev == 0 || CheckerUtils.isSameCardsNum(cardsNum, cardsNumPrev)) && CheckerUtils.isGreater(value, valuePrev, revolution)) {
+            // 素数 -> 場に出(cardBoardにadd)して手札からremove
+            if (CheckerUtils.isPrime(value)) {
+                this.putDownCards(player, cards, value, cardsNum);
+            }
+            // グロタンディーク素数 -> グロタンカット (場を流して山札に加え切る)
+            else if (CheckerUtils.isGrothendieck(value) && !isComposite) {
+                System.out.println("グロタンカット！");
+                this.putDownCards(player, cards, 0, 0);
+                this.flow();
+                // 再び自分の手番になるので自己参照
+                this.turn(player);
+            }
+            // ラマヌジャン数 -> ラマヌジャン革命 
+            else if (CheckerUtils.isRamanujan(value) && !isComposite) {
+                System.out.println("ラマヌジャン革命！");
+                this.putDownCards(player, cards, value, cardsNum);
+            }
+            // 合成数出し
+            else if (value == composite && value != 1) {
+                System.out.print("合成数出し！ " + value + "=");
+                for (int i = split; i < allSize - 1; i++) {
+                    Card card = selectCards.get(i);
+                    System.out.print(card.getValue() + "*");
+                }
+                System.out.println(selectCards.get(allSize - 1).getValue());
+                this.putDownCards(player, selectCards, value, cardsNum);
+            }
+            else {
+                if (!CheckerUtils.isPrime(value) && !isComposite) System.out.println(value + "は素数ではない！");
+                if (isComposite && value != composite) System.out.println("合成数出し失敗！ 合成数" + value + "≠積" + composite);
+                // (出した手を手札に戻し)出した枚数ぶん山札から引く
+                for (int i = 0; i < allSize; i++) {
+                    player.add(cardStock.remove(0));
+                }
             }
         }
-    }
-    public static void printHand(Player player) {
-        player.sort();
-        int size = player.size();
-        for (int i = 0; i < size; i++) {
-            Card card = player.get(i);
-            System.out.print("[" + card.getName() + "] ");
-        }
-        System.out.println();
-    }
-    public static List<String> selectHand(Player player) {
-        System.out.print("スペース区切りでカードを入力> ");
-        Scanner scanner = new Scanner(System.in);
-        String input = scanner.nextLine();
-        List<String> cards = Arrays.asList(input.split(" "));
-        return cards;
-    }
-    public static Card stringToCard(Player player, String s) {
-        for (int j = 0; j < player.size(); j++) {
-            Card card = player.get(j);
-            String name = card.getName();
-            if (name.equals(s)) {
-                return card;
+        // 素数じゃないor数字が小さいor枚数が違うor合成数出し失敗 -> (出した手を手札に戻し)出した枚数ぶん山札から引く
+        else {
+            if (!CheckerUtils.isPrime(value)) System.out.println(value + "は素数ではない！");
+            if (!CheckerUtils.isGreater(value, valuePrev, revolution)) {
+                if (revolution) System.out.println(value + "は" + valuePrev + "より小さくない！");
+                else System.out.println(value + "は" + valuePrev + "より大きくない！");
+            }
+            if (!CheckerUtils.isSameCardsNum(cardsNum, cardsNumPrev) && cardsNumPrev != 0) System.out.println("カードの枚数が" + cardsNumPrev + "枚ではない！");
+            if (isComposite && value != composite) System.out.println("合成数出し失敗！ 合成数" + value + "≠積" + composite);
+            for (int i = 0; i < allSize; i++) {
+                player.add(cardStock.remove(0));
             }
         }
-        System.out.println("[" + s + "] は含まれません。");
-        return null;
+
+        // 手札が0枚になったら終了
+        if (player.size() == 0) {
+            System.out.println(player.getName() + "の手札が0枚になったので終了");
+            return true;
+        }
+        return false;
     }
-    public static int makeValue(List<Card> cards) {
-        String value = "";
+
+    // 場に出したカードを手札から削除する
+    public void putDownCards(Player player, List<Card> cards, int value, int cardsNum) {
         for (Card card : cards) {
-            value += getNumber(card);
+            this.cardBoard.add(card);
         }
-        return Integer.parseInt(value);
+        player.removeAll(cards);
+        this.valuePrev = value;
+        this.cardsNumPrev = cardsNum;
     }
-    public static void JokerToNumber(Card card) {
-        assert card.getName().equals("Joker");
-        Scanner scanner = new Scanner(System.in);
-        int number = 0;
-        while (true) {
-            System.out.print("Jokerの値> ");
-            number = scanner.nextInt();
-            if (1 <= number && number <= 13) break;
-            System.out.println("1~13の範囲で入力");
-            number = 0;
-        }
-        card.setJokerValue(number);
-    }
-    public static String getNumber(Card card) {
-        String number = "";
-        if (card.getName().equals("Joker")) {
-            JokerToNumber(card);
-        }
-        number += card.getValue();
-        return number;
-    }
-    public static void printHelp() {
-        System.out.println("----------------------------------------");
-        System.out.println("遊び方");
-        System.out.println("基本的にプロンプトに従い、数値を入力する");
-        System.out.println("場にカードを出す際は、数値の最上位から順にカード名をスペース区切りで書き下す");
-        System.out.println("例) 1213 -> A 2 A 3 もしくは A 2 K もしくは Q K");
-        System.out.println("Jokerは1~13の任意の値に化ける。先頭から順番に化けさせたい値を入力");
-        System.out.println("例) スペース区切りでカードを入力> Joker 1 2 Joker");
-        System.out.println("    Jokerの値を入力> 13");
-        System.out.println("    Jokerの値を入力> 1");
-        System.out.println("    とすると、3枚出しの13121として認められる");
-        System.out.println();
-        System.out.println("ルール");
-        System.out.println("1. 前の人より大きい数字を出す");
-        System.out.println("2. 基本的に素数しか出せない（→合成数出し）");
-        System.out.println("3. カードの枚数は同じでなければならない（最初の人が2枚出しなら自分も2枚出す）");
-        System.out.println("4. ルールを破ったら、場に出した枚数分、山札から手札に追加される");
-        System.out.println("5. 手札が0枚になったら勝利");
-        System.out.println();
-        System.out.println("役");
-        System.out.println("合成数出し");
-        System.out.println("\t基本的に素数しか出せないが、例外として、その合成数の素因数を全て出した場合に認められる");
-        System.out.println("\t 「出したい合成数 |(パイプ) その素因数」の形で入力する");
-        System.out.println("\t例) 12 = 2 * 2 * 3より、「Q | 2 2 3」で出せば合成数12が認められる");
-        System.out.println("57\tグロタンカット");
-        System.out.println("\t数学者グロタンディークが57は素数と述べたことに起因する（グロタンディーク素数）");
-        System.out.println("\t大富豪で言う「8切り」。場を流して再び自分の手番にする");
-        System.out.println("1729\tラマヌジャン革命");
-        System.out.println("\t数学者ラマヌジャンが発見したタクシー数(1729 = 10^3 + 9^3 = 12^3 + 1^3)");
-        System.out.println("\t出すと革命が起きる（前の人より小さい数字を出す必要）");
-        System.out.println("----------------------------------------");
+
+    // 場が流れたときに実行する。場を山札に移して、prevを初期化する
+    public void flow() {
+        this.cardStock.addAll(this.cardBoard);
+        this.cardStock.shufle();
+        this.cardBoard.clear();
+        this.valuePrev = 0;
+        this.cardsNumPrev = 0;
     }
 }
